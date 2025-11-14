@@ -69,19 +69,19 @@ class Position:
     # @param[in] pos: Position string in format "[byte_idx][high_bit:low_bit]"
     #
     def __init__(self, pos: str):
-        match = re.match(r"\[(\d+)\]\[(\d+):(\d+)\]", pos)
+        match = re.match(r'\[(\d+)\]\[(\d+):(\d+)\]', pos)
         if not match:
-            raise ValueError(f"Invalid position format: {pos}")
+            raise ValueError(f'Invalid position format: {pos}')
         
         byte_idx, high_bit, low_bit = map(int, match.groups())
         if not self._is_valid_bit_pos(high_bit):
-            raise OverflowError(f"High bit {hb} should be in range [0...7]")
+            raise OverflowError(f'High bit {high_bit} should be in range [0...7]')
 
         if not self._is_valid_bit_pos(low_bit):
-            raise OverflowError(f"Low bit {low_bit} should be in range [0...7]")
+            raise OverflowError(f'Low bit {low_bit} should be in range [0...7]')
         
         if low_bit > high_bit:
-            raise OverflowError(f"Low bit {low_bit} should be less than high bit {high_bit}")
+            raise OverflowError(f'Low bit {low_bit} should be less than high bit {high_bit}')
         
         self.byte_idx = byte_idx
         self.high_bit = high_bit
@@ -122,16 +122,9 @@ def validateConfig(data: bytes, map) -> None:
         raise ValueError(f'Config size should be {data_len}')
     
     table = getPositionTable(map)
-    aaa = table['AAA']
-    bstr = readBits(data, Position(aaa))
-    actual_project_code = int(bstr, 2)
-    project_code = map['project_code']
-    project_code_legacy = map['project_code_legacy']
-    if actual_project_code != project_code:
-        if actual_project_code == project_code_legacy:
-            print('Legacy config detected: make sure you have updated the firmware to the latest version')
-        else:
-            raise ValueError(f"Unsupported project code: expected {project_code} or {project_code_legacy}, got {actual_project_code}")
+    project_code = int(readBits(data, Position(table['AAA'])), 2)
+    if not project_code in map['project_code']:
+        raise ValueError(f'Unsupported project code {project_code}')
     
     for property, pos in table.items():
         position = Position(pos)
@@ -143,10 +136,10 @@ def validateConfig(data: bytes, map) -> None:
 #
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--map', dest = 'map', type = str, default = "map.json", help = "path to JSON file with mapping of properties to config bits")
-    parser.add_argument('--src', dest = 'src', type = str, default = "VehicleConfig.bin", help = "path to source config binary file")
-    parser.add_argument('--dst', dest = 'dst', type = str, default = "NewVehicleConfig.bin", help = "path to destination config binary file")
-    parser.add_argument('props', metavar = 'PROPERTY:BITSTRING', type = str, nargs = '+', help = "property:bitstring pairs")
+    parser.add_argument('--map', dest = 'map', type = str, default = 'map.json', help = 'path to JSON file with mapping of properties to config bits')
+    parser.add_argument('--src', dest = 'src', type = str, default = 'VehicleConfig.bin', help = 'path to source config binary file')
+    parser.add_argument('--dst', dest = 'dst', type = str, default = 'NewVehicleConfig.bin', help = 'path to destination config binary file')
+    parser.add_argument('props', metavar = 'PROPERTY:BITSTRING', type = str, nargs = '+', help = 'property:bitstring pairs')
     args = parser.parse_args()
    
     print(f'Read property map from {args.map}')

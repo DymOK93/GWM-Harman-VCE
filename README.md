@@ -8,3 +8,9 @@ Python 3.2 or newer.
 ```
 vce [--map <path-to-map-file>] [--src <path-to-source-config-file|VehicleConfig.bin>] [--dst <path-to-source-config-file|NewVehicleConfig.bin>] property1:value1...propertyN:valueN
 ```
+## Configuration map
+|Project code|Vehicle|Model Year|Region|
+|---------|----------|----------|----------|
+|0x44 (68)|Haval Jolion|2021-2023|Russia|
+|0x82 (130)|Haval Jolion|2024-2025|China|
+|0x8F (143)|Haval Jolion|2024-2025|Russia|
