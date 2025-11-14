@@ -93,7 +93,7 @@ class Position:
 #
 def readBits(data: bytes, pos: Position) -> str:
     bitstr = format(data[pos.byte_idx], '08b')
-    return bitstr[::-1][pos.low_bit:pos.high_bit + 1][::-1]
+    return bitstr[8 - pos.high_bit - 1:8 - pos.low_bit]
 
 #
 # Writes bits at a given position
@@ -107,9 +107,9 @@ def writeBits(data: bytearray, pos: Position, value: str):
     if value_len != expected_len:
         raise OverflowError(f'Bistring length {value_len} is not equal to expected {expected_len}')
     
-    bitlist = list(format(data[pos.byte_idx], '08b'))[::-1]
-    bitlist[pos.low_bit:pos.high_bit + 1] = list(value)[::-1]
-    data[pos.byte_idx] = int(''.join(bitlist[::-1]), 2)
+    bitlist = list(format(data[pos.byte_idx], '08b'))
+    bitlist[8 - pos.high_bit - 1:8 - pos.low_bit] = list(value)
+    data[pos.byte_idx] = int(''.join(bitlist), 2)
 
 #
 # Validates config size and project code against map
