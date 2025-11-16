@@ -1,26 +1,12 @@
 import argparse
 import json
 import re
+from abc import ABC, abstractmethod
 
 #
 # Project code property: 'ro.vehicle.config.AAA'
 #
 kProjectCodeProperty = 'AAA'
-
-#
-# Calculates CRC8
-# @param[in] data: Binary data without CRC byte
-# @return CRC value
-#
-def calcCrc8(data: bytes) -> int:
-    crc = 0
-    for b in data:
-        crc ^= b << 8
-        for _ in range(8):
-            if (crc & 0x8000) != 0:
-                crc ^= 0x8380
-            crc *= 2
-    return (crc >> 8) & 0xFFFFFF
 
 #
 # Reads binary files
@@ -89,6 +75,7 @@ class Position:
 #
 # Reads bits at a given position
 # @param[in] data: Configuration bytes
+# @param[in] pos: Position
 # @return Little-endian bitstring 
 #
 def readBits(data: bytes, pos: Position) -> str:
@@ -96,8 +83,17 @@ def readBits(data: bytes, pos: Position) -> str:
     return bitstr[8 - pos.high_bit - 1:8 - pos.low_bit]
 
 #
-# Writes bits at a given position
+# Reads number at a given position
 # @param[in] data: Configuration bytes
+# @param[in] pos: Position
+# @return Number
+#
+def readNumber(data: bytes, pos: Position) -> int:
+    return int(readBits(data, pos), 2)
+
+#
+# Writes bits at a given position
+# @param[in,out] data: Configuration bytes
 # @param[in] pos: Position
 # @param[in] value: Little-endian bitstring
 #
@@ -114,7 +110,7 @@ def writeBits(data: bytearray, pos: Position, value: str) -> None:
 #
 # Writes number at a given position
 # @remark Value is converted to a bit string of required length (padded with leading zeros)
-# @param[in] data: Configuration bytes
+# @param[in,out] data: Configuration bytes
 # @param[in] pos: Position
 # @param[in] value: Number
 #
@@ -137,59 +133,156 @@ def writeNumber(data: bytearray, pos: Position, value: int) -> None:
 # @param[in] map: JSON config
 #
 def validateConfig(data: bytes, map) -> None:
-    data_len = len(data)
-    if data_len == 0 or data_len != map['size']:
-        raise ValueError(f'Config size should be {data_len}')
+    config_size = len(data)
+    expected_size = map['config_size'] # Size without CRC byte
+    if config_size != expected_size:  
+        raise ValueError(f'Config size {config_size} should be {expected_size}')
     
     table = getPositionTable(map)
-    project_code = int(readBits(data, Position(table['AAA'])), 2)
+    project_code = readNumber(data, Position(table['AAA']))
     if not project_code in map['project_code']:
         raise ValueError(f'Unsupported project code {project_code}')
     
     for property, pos in table.items():
         position = Position(pos)
-        if position.byte_idx >= data_len - 1:  # Last byte is CRC
+        if position.byte_idx >= config_size:
             raise OverflowError(f'Property {property} has invalid index {position.byte_idx}')
         
 #
 # Property name and value
 #
 class Property:
-    name = ''
-    bitstr = ''
-    number = 0
-
-    def _splitProps(self, sep: str, props: str):
+    @staticmethod
+    def _splitProps(sep: str, props: str):
         split = props.split(sep)
         if len(split) < 2:
             return None
         return split
     
-    def _extractBistr(self, s: str) -> str:
+    @staticmethod
+    def _extractBitstr(s: str) -> str:
         if len(s) == 0 or not all(c in '01' for c in s):
             raise ValueError(f'Bitstring {s} should contain only 0 and 1')
         return s
     
-    def _extractNumber(self, s: str) -> int:
+    @staticmethod
+    def _extractNumber(s: str) -> int:
         n = int(s, 0)         # Select base automatically
         if n < 0 or n > 255:  # Should fit in a byte
             raise ValueError(f'Number {n} should be positive and less than 255')
         return n
 
     def __init__(self, props: str):
-        split = self._splitProps(':', props)
+        split = Property._splitProps(':', props)
         if not split is None:
             self.name = split[0]
-            self.bitstr = self._extractBistr(split[1])
+            self.value = Property._extractBitstr(split[1])
             return
         
-        split = self._splitProps('=', props)
+        split = Property._splitProps('=', props)
         if not split is None:
             self.name = split[0]
-            self.number = self._extractNumber(split[1])
+            self.value = Property._extractNumber(split[1])
             return
 
         raise ValueError(f'Argument {props} should be in format PROPERTY:BITSTRING or PROPERTY=DECVALUE or PROPERTY=HEXVALUE')
+    
+    def apply(self, data: bytearray, pos: Position) -> None:
+        value = self.value
+        if isinstance(value, str):
+            writeBits(data, pos, value)
+        else: # value should be int
+            writeNumber(data, pos, value)
+    
+#
+# Abstract vehicle configuration
+#
+class ISerializer(ABC):
+    def _openFile(self, path: str, writeable: bool):
+        mode = ['r', 'w'][writeable] + ['', 'b'][self._isBinary()]
+        return open(path, mode)
+
+    def read(self, path: str) -> bytes:
+        with self._openFile(path, False) as cfg:
+            return self._decode(cfg.read())
+
+    def write(self, path: str, data: bytes) -> None:
+        with self._openFile(path, True) as cfg:
+            cfg.write(self._encode(data))
+
+    @abstractmethod
+    def _isBinary(self) -> bool:
+        pass
+
+    @abstractmethod
+    def _decode(self, data) -> bytes:
+        pass
+
+    @abstractmethod
+    def _encode(self, data: bytes):
+        pass
+
+#
+# Binary configuration serializer (for VehicleConfig.bin with CRC in last byte)
+#
+class BinarySerializer(ISerializer): 
+    @staticmethod
+    def _calcCrc8(data: bytes):
+        crc = 0
+        for b in data:
+            crc ^= b << 8
+            for _ in range(8):
+                if (crc & 0x8000) != 0:
+                    crc ^= 0x8380
+                crc *= 2
+        return (crc >> 8) & 0xFFFFFF
+    
+    def _isBinary(self) -> bool:
+        return True
+
+    def _decode(self, data: bytes) -> bytes:
+        return data[:-1]  # config without last byte
+
+    def _encode(self, data: bytes) -> bytes:
+        return data + bytes([BinarySerializer._calcCrc8(data)])
+
+#
+# Text configuration serializer (for VehicleConfig.txt without CRC)
+#
+class TextSerializer(ISerializer): 
+    def _isBinary(self) -> bool:
+        return False
+
+    def _decode(self, data: str) -> bytes:
+        return bytes.fromhex(data)
+
+    def _encode(self, data: bytes) -> str:
+        return data.hex()
+#
+# Creates configuration serializer 
+#
+def createSerializer(type: str):
+    if type == 'binary':
+        return BinarySerializer()
+    
+    if type == 'text':
+        return TextSerializer()
+    
+    raise ValueError(f'Unknown config type {type}')
+
+#
+# Creates parsers for 'type'-dependent arguments
+#
+def getFilePaths(binary: bool, src, dst) -> tuple:
+    extensions = ['.txt', '.bin']
+
+    if src is None:
+        src = 'VehicleConfig' + extensions[binary]
+
+    if dst is None:
+        dst = 'NewVehicleConfig' + extensions[binary]  
+
+    return (src, dst)
 
 #
 # Does processing
@@ -197,16 +290,20 @@ class Property:
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--map', dest = 'map', type = str, default = 'map.json', help = 'path to JSON file with mapping of properties to config bits')
-    parser.add_argument('--src', dest = 'src', type = str, default = 'VehicleConfig.bin', help = 'path to source config binary file')
-    parser.add_argument('--dst', dest = 'dst', type = str, default = 'NewVehicleConfig.bin', help = 'path to destination config binary file')
-    parser.add_argument('props', metavar = 'PROPERTY:BITSTRING', type = str, nargs = '+', help = 'property:bitstring pairs')
+    parser.add_argument('--type', dest = 'type', type = str, default = 'binary', help = 'config file type: binary or text')
+    parser.add_argument('--src', dest = 'src', type = str, help = 'path to source config file')
+    parser.add_argument('--dst', dest = 'dst', type = str, help = 'path to destination config file')
+    parser.add_argument('props', type = str, nargs = '+', help = 'property:bitstring or property=value pairs')
     args = parser.parse_args()
    
     print(f'Read property map from {args.map}')
     map = readMap(args.map)
+    
+    serializer = createSerializer(args.type)
+    src, dst = getFilePaths(args.type == 'binary', args.src, args.dst)
 
-    print(f'Read config from {args.src}')
-    data = readConfig(args.src)
+    print(f'Read config from {src}')
+    data = bytearray(serializer.read(src))
     validateConfig(data, map)
     updated = False
 
@@ -219,16 +316,12 @@ def main():
         if position is None:
             raise KeyError(f"Property '{name}' not found in map")
         
-        if len(property.bitstr) > 0:
-            writeBits(data, Position(position), property.bitstr)
-        else:
-            writeNumber(data, Position(position), property.number)
+        property.apply(data, Position(position))
         updated = True
 
     if updated:
-        print(f'Save updated config to {args.dst}')
-        data[-1] = calcCrc8(data[:-1])
-        writeConfig(args.dst, data)
+        print(f'Save updated config to {dst}')
+        serializer.write(dst, data)
 
 #
 # Launches main
