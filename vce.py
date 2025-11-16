@@ -97,15 +97,17 @@ def readNumber(data: bytes, pos: Position) -> int:
 # @param[in] pos: Position
 # @param[in] value: Little-endian bitstring
 #
-def writeBits(data: bytearray, pos: Position, value: str) -> None:
+def writeBits(data: bytearray, pos: Position, value: str) -> str:
     value_len = len(value)
     expected_len = pos.high_bit - pos.low_bit + 1
     if value_len != expected_len:
         raise OverflowError(f'Bistring length {value_len} is not equal to expected {expected_len}')
     
-    bitlist = list(format(data[pos.byte_idx], '08b'))
+    bitstr = format(data[pos.byte_idx], '08b')
+    bitlist = list(bitstr)
     bitlist[8 - pos.high_bit - 1:8 - pos.low_bit] = list(value)
     data[pos.byte_idx] = int(''.join(bitlist), 2)
+    return bitstr[8 - pos.high_bit - 1:8 - pos.low_bit]
 
 #
 # Writes number at a given position
@@ -114,7 +116,7 @@ def writeBits(data: bytearray, pos: Position, value: str) -> None:
 # @param[in] pos: Position
 # @param[in] value: Number
 #
-def writeNumber(data: bytearray, pos: Position, value: int) -> None:
+def writeNumber(data: bytearray, pos: Position, value: int) -> int:
     bitstr = format(value, 'b')
     actual_len = len(bitstr)
     expected_len = pos.high_bit - pos.low_bit + 1
@@ -125,7 +127,8 @@ def writeNumber(data: bytearray, pos: Position, value: int) -> None:
     if actual_len < expected_len:
         bitstr = '0' * (expected_len - actual_len) + bitstr 
     
-    writeBits(data, pos, bitstr)
+    old_bitstr = writeBits(data, pos, bitstr)
+    return int(old_bitstr, 2)
 
 #
 # Validates config size and project code against map
@@ -189,10 +192,13 @@ class Property:
     
     def apply(self, data: bytearray, pos: Position) -> None:
         value = self.value
+
         if isinstance(value, str):
-            writeBits(data, pos, value)
+            old_value = writeBits(data, pos, value)
         else: # value should be int
-            writeNumber(data, pos, value)
+            old_value = writeNumber(data, pos, value)
+        
+        print(f'Update property {self.name}: {old_value} -> {value}')
     
 #
 # Abstract vehicle configuration
@@ -328,9 +334,3 @@ def main():
 #
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
