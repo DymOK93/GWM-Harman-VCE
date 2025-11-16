@@ -6,7 +6,7 @@ Use `adb root` to access configuration file.
 Python 3.2 or newer.
 ## Usage
 ```
-vce [--map <path-to-map-file>] [--src <path-to-source-config-file|VehicleConfig.bin>] [--dst <path-to-source-config-file|NewVehicleConfig.bin>] property1:value1...propertyN:valueN
+vce [--map <path-to-map-file>] [--type <config-type|binary,text>] [--src <path-to-source-config-file|VehicleConfig.bin,VehicleConfig.txt>] [--dst <path-to-source-config-file|NewVehicleConfig.bin,NewVehicleConfig.txt>] property1:bitstring1...propertyN=valueN
 ```
 ## Configuration map
 |Project code|Vehicle|Model Year|Region|
